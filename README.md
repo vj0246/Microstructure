@@ -7,7 +7,12 @@ The return from the last trade of day t to the next morning's call-auction open 
 - **Institutional (I):** mutual funds, insurers, pension and sovereign funds, foreign portfolio investors.
 - **Reference (R):** individuals, HUFs, unaffiliated corporates.
 
-The design was argued out by four adversarial reviewers and settled by a judge ([docs/PLAN.md](docs/PLAN.md)). The confirmatory test was pre-registered and frozen under the git tag `spec-v1` ([docs/SPEC.md](docs/SPEC.md)) before any outcome was computed by trader type.
+The design was argued out by four adversarial reviewers and settled by a judge ([docs/PLAN.md](docs/PLAN.md)). Two confirmatory tests were pre-registered and frozen under git tags before their outcomes were computed:
+
+- **Buys:** tag `spec-v1`, [docs/SPEC.md](docs/SPEC.md). Underpowered, so reported as descriptive.
+- **Sells:** tag `spec-v2`, [docs/SPEC_v2.md](docs/SPEC_v2.md). Powered: I 1,031, R 1,067.
+
+**Headline.** A disclosed institutional buy is followed by an overnight premium of about 3× the reference level per unit of √size (descriptive). On disclosed sells, the powered test finds no difference between institutions and reference sellers, and no overnight response at all.
 
 ## Identification
 
@@ -187,6 +192,33 @@ Robustness items not run: 3 and 5 to 8, which need cells the event table does no
 
 **Bottom line.** Descriptively, the overnight return after a disclosed buy is about three times as large per unit of √size when the buyer is an institution. The study cannot say whether that premium is news about fundamentals or the price of expected continued institutional buying. The sample is underpowered, and the type labels are about 94.5% accurate, with the errors biasing toward no difference.
 
+## Sell side: the powered test (SPEC v2)
+
+The buy-side test could not be powered: only 994 institutional buy stock-days exist before isolation, and 789 to 794 survive into the cell under every definition tried. An outcome-blind count study found that **sells clear the power gate with the unchanged v1 cell** (I 1,031, R 1,067). No sell-side return by type had been computed at that point. So the sell-side contrast was pre-registered as a new confirmatory test, C2, in [docs/SPEC_v2.md](docs/SPEC_v2.md) and frozen under tag `spec-v2` before it was run.
+
+In C2, outcomes and band flags are signed by side, so a positive θ means the price keeps moving in the direction of the sell after the disclosure.
+
+![Figure 2](docs/figure2.png)
+
+| Quantity | n | θ_I | θ_R | z | p |
+|---|---|---|---|---|---|
+| **C2: sells, confirmatory** | 2,098 | −0.003 | +0.005 | −1.20 | 0.23 |
+| C2, official close baseline | 2,098 | −0.002 | +0.006 | −1.23 | 0.22 |
+| C2, ν profiled (best 2) | 2,098 | −0.005 | +0.001 | −1.13 | 0.26 |
+| C2, uncensored OLS | 2,098 | +0.006 | +0.009 | −0.32 | 0.75 |
+| C2, day-0 control | 2,098 | −0.003 | +0.005 | −1.22 | 0.22 |
+| C2, 2013-19 / 2020-26 | 997 / 1,101 | −0.001 / −0.010 | +0.001 / +0.006 | −0.17 / −1.72 | 0.86 / 0.09 |
+| E1: buys and sells pooled, **exploratory** | 3,640 | 0.018 | 0.011 | 1.31 | 0.19 |
+
+**Reading.**
+- **C2 does not reject.** Neither institutional nor reference sells move the overnight price per unit of √size: both θ are within 0.01σ of zero, under every variant.
+- **The null is informative.** The contrast's standard error is about 0.006σ, so C2 had about 80% power against a gap of 0.017σ, less than half the descriptive buy-side gap (0.039σ).
+- **Placebo.** Reference sellers sell after run-ups (the r_m5 placebo has z = −3.45), which is profit taking. Institutional sellers show no run-up.
+- **Price path.** Both groups' day-0 moves in the sell's direction are fully reversed by t+20.
+- **Pooling dilutes the buy premium.** The pooled E1 contrast is not significant.
+
+**Overall.** The one powered, pre-registered test finds **no identity premium on disclosed sells**. The buy side shows an institutional premium (θ_I ≈ 3 × θ_R) that is descriptive only. The pattern matches the long-standing buy/sell asymmetry in block-trade studies: purchases carry information, while sales are more often liquidity-driven. That comparison is drawn across the two sides, not from a joint confirmatory test.
+
 ## D4: why no free impact exponent
 
 This is a simulated panel of 1,500 stocks with a true law r = Y·σ·(|net|/ADV)^0.5 plus t-noise, run over 10 seeds per scenario. Profile bias is for the censored-t fit; the binned fit is the slope of log mean response on log x.
@@ -206,7 +238,7 @@ With churners (52% of real client-days), a fitted exponent collapses toward zero
 
 - The typing audit misses its 95% gate by one name, and the verdicts partly rest on the author's recall.
 - The PIT data lacks some promoters (for example, the Kaynes founder), so some strategic sellers are typed R.
-- The primary test is underpowered: fewer than 1,000 events per group.
+- The buy-side test is underpowered: fewer than 1,000 events per group. The powered sell-side test (C2) is a separate question, not a replication of it.
 - The live-snapshot revision check covers 1 of the 5 trading days it needs.
 - Delivery data is missing for 8 August 2022, when NSE serves an Excel file under the CSV name.
 
@@ -222,9 +254,9 @@ src/impact/
   clean/          symbols.py, adjustment.py, panel.py
   flows/          disclosures.py, trader_types.py, client_types.csv
   analysis/       estimators.py, truncation_sim.py, report.py
-docs/             PLAN.md (design and rulings), SPEC.md (pre-registration), figure1.png
+docs/             PLAN.md (design and rulings), SPEC.md (buys, v1), SPEC_v2.md (sells, v2), figures
 scripts/          run_pipeline.cmd (resumable pull, build, simulation)
-tests/            one file per module (100 tests)
+tests/            one file per module (103 tests)
 ```
 
-Python 3.12, uv, polars, httpx, numpy, scipy, matplotlib. Data lives outside the repo in `IMPACT_DATA_DIR`. Entry points: `uv run impact build`, `uv run impact check m0..m4`, `uv run impact simulate`, `uv run impact report` (the last refuses to run without the `spec-v1` tag).
+Python 3.12, uv, polars, httpx, numpy, scipy, matplotlib. Data lives outside the repo in `IMPACT_DATA_DIR`. Entry points: `uv run impact build`, `uv run impact check m0..m4`, `uv run impact simulate`, `uv run impact report [--spec v1|v2]`. Each version refuses to run without its own tag.
