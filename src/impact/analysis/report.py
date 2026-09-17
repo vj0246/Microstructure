@@ -84,6 +84,56 @@ def binned_day0(cell: pl.DataFrame, bins: int = 12, reps: int = 200, seed: int =
     return rows.rename({"stock_type": "group"}).drop("bin").to_dicts()
 
 
+NU_GRID = (2.0, 3.0, 4.0, 6.0, 10.0, 30.0)
+NOT_RUN = (
+    "3 pre-2013 opens: not call-auction prices for most stocks, outside the event table's g1 window",
+    "5 reference variants: stock-day subtypes are not carried in the event table",
+    "6 cross tolerance and cross-free stock-days: 0.4% of event days carry a cross",
+    "7 BE/BZ and narrow-band exclusions: series and band width are not in the primary cell",
+    "8 delivery-backed stock-days: no pre-registered delivery threshold",
+    "10 date fixed effects and pigeonhole bootstrap: not implemented",
+)
+
+
+def _contrast(frame: pl.DataFrame, leg: str = "g1", control: bool = False, estimator: str = "t",
+              stock_only: bool = False, nu: float = estimators.NU) -> dict[str, float]:
+    """theta_I, theta_R and the two-sided test of their difference for one robustness variant."""
+    X, names = estimators.impact_design(frame, GROUPS)
+    if control:  # day-t control: conditions on a post-trade outcome, so it is a collider (PLAN item 4)
+        X, names = np.column_stack([X, frame["id_abn"].to_numpy() / frame["sigma"].to_numpy()]), (*names, "day0")
+    y = frame[f"{leg}_abn"].to_numpy() / frame["sigma"].to_numpy()
+    band = frame["open_band_next"].to_numpy()
+    clusters = (frame["symbol"].to_numpy(),) if stock_only else (frame["symbol"].to_numpy(), frame["date"].to_numpy())
+    if estimator == "ols":
+        fit = estimators.ols(y, X, names, *clusters)
+    else:
+        fit = estimators.censored_t(y, X, names, band > 0, band < 0, *clusters, nu=nu)
+    contrast = np.zeros(len(fit.names))
+    contrast[:2] = (1.0, -1.0)
+    z, p = fit.wald(contrast)
+    return {"n": frame.height, "theta_I": float(fit.coef[0]), "theta_R": float(fit.coef[1]), "z": z, "p": p}
+
+
+def robustness(cell: pl.DataFrame) -> dict[str, dict[str, float]]:
+    """PLAN section 8 items computable from the event table (1, 2, 4, 9, 10 in part), each a variant of
+    the primary contrast; NOT_RUN lists the rest with the reason."""
+    nu = max(NU_GRID, key=lambda v: estimators.censored_t(
+        cell["g1_abn"].to_numpy() / cell["sigma"].to_numpy(), *estimators.impact_design(cell, GROUPS),
+        cell["open_band_next"].to_numpy() > 0, cell["open_band_next"].to_numpy() < 0, nu=v).loglik)
+    year = pl.col("date").dt.year()
+    return {
+        "1 official close baseline (g1c)": _contrast(cell, leg="g1c"),
+        f"2 nu profiled over {NU_GRID} (best {nu:g})": _contrast(cell, nu=nu),
+        "2 uncensored OLS": _contrast(cell, estimator="ols"),
+        "2 censored events dropped": _contrast(cell.filter(pl.col("open_band_next") == 0)),
+        "4 day-0 control (collider)": _contrast(cell, control=True),
+        "9 excluding 2020-21": _contrast(cell.filter(~year.is_in([2020, 2021]))),
+        "9 2013-19 only": _contrast(cell.filter(year <= 2019)),
+        "9 2020-26 only": _contrast(cell.filter(year >= 2020)),
+        "10 stock-only clustering": _contrast(cell, stock_only=True),
+    }
+
+
 def run(out: Path, repo: Path = REPO) -> dict:
     """Primary test, D1, S1 to S4 with Holm, and the figure inputs, as a JSON-ready dict."""
     require_spec(repo)
@@ -97,6 +147,9 @@ def run(out: Path, repo: Path = REPO) -> dict:
     z, p = primary.wald(np.eye(len(primary.names))[0] - np.eye(len(primary.names))[1])
 
     day0 = estimators.day0_scale(cell)
+    # level for Figure 1B: bucket effects absorb it in the fit, so the slope curve is drawn through the pooled mean
+    y0, root = cell["side"].to_numpy() * cell["id_abn"].to_numpy() / cell["sigma"].to_numpy(), np.sqrt(cell["x"].to_numpy())
+    anchor = float(y0.mean() - day0.coef[0] * root.mean())
     y_ub = estimators.anticipation_scale(day0)
     calendar = panel.market_calendar(pl.scan_parquet(out / "prices" / "*.parquet").select("date").unique().collect()["date"])
     forecast = disclosures.continuation_forecast(
@@ -122,7 +175,7 @@ def run(out: Path, repo: Path = REPO) -> dict:
             **{f"se_{g}": float(primary.se[i]) for i, g in enumerate(GROUPS)},
             **_test(z, p),
         },
-        "day0": {"Y_obs": float(day0.coef[0]), "se": float(day0.se[0]), "Y_UB": y_ub},
+        "day0": {"Y_obs": float(day0.coef[0]), "se": float(day0.se[0]), "Y_UB": y_ub, "anchor": anchor},
         "s1": {str(k): _test(*v) for k, v in s1.items()},
         "s1_breakdown_k": breakdown,
         "placebo": {leg: {g: _test(*v) for g, v in by_group.items()} for leg, by_group in placebo.items()},
@@ -132,6 +185,8 @@ def run(out: Path, repo: Path = REPO) -> dict:
         "s4": {"theta_P": float(s4_fit.coef[0]), "se": float(s4_fit.se[0]), "p": s4_p},
         "holm": estimators.holm(pvalues),
         "binned": binned_day0(cell),
+        "robustness": robustness(cell),
+        "robustness_not_run": list(NOT_RUN),
     }
 
 
@@ -193,7 +248,8 @@ def figure1(results: dict, path: Path) -> None:
         right.errorbar(part["x"] * dodge, part["mean"], yerr=err, fmt="o", color=SERIES[g], markersize=5,
                        markeredgecolor=SURFACE, markeredgewidth=1.5, elinewidth=1.0, label=GROUP_NAMES[g])
     grid = np.geomspace(binned["x"].min(), binned["x"].max(), 100)
-    right.plot(grid, results["day0"]["Y_obs"] * np.sqrt(grid), color=MUTED, linewidth=1.0, label="Y_obs x sqrt(x) (delta = 1/2)")
+    curve = results["day0"]["anchor"] + results["day0"]["Y_obs"] * np.sqrt(grid)
+    right.plot(grid, curve, color=MUTED, linewidth=1.0, label="pooled fit: level + Y_obs sqrt(x) (delta = 1/2)")
     right.axhline(0, color=AXIS, linewidth=0.8)
     right.set_xscale("log")
     right.xaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:g}"))
@@ -212,4 +268,5 @@ def write_outputs(results: dict, dest: Path) -> None:
     dest.mkdir(parents=True, exist_ok=True)
     (dest / "results.json").write_text(json.dumps(results, indent=2, default=str), encoding="utf-8")
     table1(results).write_csv(dest / "table1.csv")
+    pl.DataFrame([{"variant": k, **v} for k, v in results["robustness"].items()]).write_csv(dest / "robustness.csv")
     figure1(results, dest / "figure1.png")
