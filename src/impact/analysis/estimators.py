@@ -34,11 +34,11 @@ def quality(table: pl.DataFrame) -> pl.DataFrame:
     )
 
 
-def primary_cell(table: pl.DataFrame) -> pl.DataFrame:
-    """PLAN section 7 cell before common support: quality() plus buy stock-days of type I or R at the 80%
-    threshold (R also novel) that are backward-isolated."""
+def primary_cell(table: pl.DataFrame, side: int = 1) -> pl.DataFrame:
+    """PLAN section 7 cell before common support: quality() plus stock-days of type I or R at the 80%
+    threshold (R also novel) that are backward-isolated, on one side: buys (v1) or sells (SPEC v2, C2)."""
     return quality(table).filter(
-        (pl.col("side") == 1)
+        (pl.col("side") == side)
         & pl.col("stock_type").is_in(["I", "R"])
         & ((pl.col("stock_type") == "I") | pl.col("novel"))
         & pl.col("isolated")

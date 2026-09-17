@@ -24,7 +24,8 @@ def main(argv: list[str] | None = None) -> None:
     )
     check.add_argument("milestone", nargs="?", choices=("m0", "m1", "m2", "m3", "m4"), default="m0")
     sub.add_parser("build", help="raw store to parquet: prices, flows, daily panel, benchmarks")
-    sub.add_parser("report", help="confirmatory run (needs git tag spec-v1): results.json, table1.csv, figure1.png")
+    confirm = sub.add_parser("report", help="confirmatory run: v1 buys (tag spec-v1) or v2 sells and pooled (tag spec-v2)")
+    confirm.add_argument("--spec", choices=("v1", "v2"), default="v1")
     sub.add_parser("simulate", help="D4 gross-trigger truncation simulation: d4_simulation.csv")
     args = parser.parse_args(argv)
 
@@ -40,7 +41,11 @@ def main(argv: list[str] | None = None) -> None:
         print(truncation_sim.summary(runs))
         return
     if args.command == "report":
-        report.write_outputs(report.run(settings.data_dir / "parquet"), settings.data_dir / "out")
+        out, dest = settings.data_dir / "parquet", settings.data_dir / "out"
+        if args.spec == "v2":
+            report.write_outputs_v2(report.run_v2(out), dest)
+        else:
+            report.write_outputs(report.run(out), dest)
         return
     if args.command == "check":
         out = settings.data_dir / "parquet"

@@ -46,3 +46,47 @@ def test_outputs_are_written(tmp_path):
     assert "official close" in (tmp_path / "robustness.csv").read_text()
     table = report.table1(synthetic_results())
     assert table.height == 2 + 1 + 1 + 3 + 1 + 1 + 1
+
+
+def synthetic_cell(side, n=600, seed=3):
+    import numpy as np
+    import polars as pl
+
+    rng = np.random.default_rng(seed)
+    kind = np.where(np.arange(n) % 2 == 0, "I", "R")
+    x = rng.uniform(0.1, 4.0, n)
+    theta = np.where(kind == "I", 0.5, 0.1)
+    g1 = side * theta * np.sqrt(x) + 0.3 * rng.standard_normal(n)  # signed response, sigma = 1
+    return pl.DataFrame({
+        "symbol": [f"S{i % 60}" for i in range(n)], "date": [f"D{i % 80}" for i in range(n)],
+        "side": [side] * n, "stock_type": kind, "x": x, "bucket": rng.integers(0, 3, n),
+        "sigma": 1.0, "g1_abn": g1, "id_abn": 0.0, "open_band_next": [0] * n,
+    })
+
+
+def test_contrast_is_signed_so_sells_read_like_buys():
+    for side in (1, -1):
+        out = report._contrast(synthetic_cell(side))
+        assert abs(out["theta_I"] - 0.5) < 0.1 and abs(out["theta_R"] - 0.1) < 0.1 and out["z"] > 3
+
+
+def test_pooled_design_gets_bucket_by_side_effects():
+    import polars as pl
+
+    pooled = pl.concat([synthetic_cell(1, n=40), synthetic_cell(-1, n=40)])
+    _, names = report.design(pooled)
+    assert len([n for n in names if n.startswith("bucket_")]) == 6
+
+
+def test_v2_outputs_are_written(tmp_path):
+    base = synthetic_results()
+    row = {"n": 10, "theta_I": 0.3, "theta_R": 0.1, "z": 1.2, "p": 0.23}
+    results = {
+        "c2": {"counts": {"I": 1100, "R": 1050}, "descriptive_only": False, "test": row, "path": base["path"],
+               "placebo": base["placebo"], "robustness": {"2 uncensored OLS": row}},
+        "e1_exploratory": {"counts": {"I": 1900, "R": 1800}, "test": row},
+    }
+    report.write_outputs_v2(results, tmp_path)
+    assert report.table2(results).height == 3
+    assert (tmp_path / "figure2.png").stat().st_size > 10_000
+    assert json.loads((tmp_path / "results_v2.json").read_text())["c2"]["counts"]["R"] == 1050

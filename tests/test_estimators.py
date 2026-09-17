@@ -64,6 +64,7 @@ def test_primary_cell_applies_every_preregistered_condition():
     ]
     rows = [base, {**base, "stock_type": "R", "novel": True}] + [{**base, **b} for b in breaks]
     kept = estimators.primary_cell(pl.DataFrame(rows))
+    assert estimators.primary_cell(pl.DataFrame([{**base, "side": -1}]), side=-1).height == 1
     assert kept.height == 2  # the untouched I row and the novel R row
 
 

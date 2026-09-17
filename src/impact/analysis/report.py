@@ -21,6 +21,7 @@ from impact.flows import disclosures  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[3]
 SPEC_TAG = "spec-v1"
+SPEC_V2_TAG = "spec-v2"
 GROUPS = ("I", "R")
 PATH_LEGS = ("r_m5", "ov", "id", "g1", "d15", "d620")
 PATH_LABELS = ("t-5", "t-1 last", "t open", "t last", "t+1 open", "t+5", "t+20")
@@ -30,10 +31,10 @@ SURFACE, INK, INK_2, MUTED, GRID, AXIS = "#fcfcfb", "#0b0b0b", "#52514e", "#8987
 GROUP_NAMES = {"I": "Institutional", "R": "Reference"}
 
 
-def require_spec(repo: Path = REPO) -> None:
-    tags = subprocess.run(["git", "tag", "--list", SPEC_TAG], cwd=repo, capture_output=True, text=True, check=True)
-    if SPEC_TAG not in tags.stdout.split():
-        raise SystemExit(f"SPEC.md is not frozen: create tag {SPEC_TAG} first; overnight legs by type stay uncomputed")
+def require_spec(repo: Path = REPO, tag: str = SPEC_TAG) -> None:
+    tags = subprocess.run(["git", "tag", "--list", tag], cwd=repo, capture_output=True, text=True, check=True)
+    if tag not in tags.stdout.split():
+        raise SystemExit(f"the spec is not frozen: create tag {tag} first; overnight legs by type stay uncomputed")
 
 
 def _test(z: float, p: float) -> dict[str, float]:
@@ -95,14 +96,23 @@ NOT_RUN = (
 )
 
 
+def design(frame: pl.DataFrame) -> tuple[np.ndarray, tuple[str, ...]]:
+    """The primary design; a cell holding both sides (E1) gets bucket x side effects."""
+    if frame["side"].n_unique() > 1:
+        frame = frame.with_columns(bucket=pl.col("bucket").cast(pl.Int64) * 2 + (pl.col("side") > 0).cast(pl.Int64))
+    return estimators.impact_design(frame, GROUPS)
+
+
 def _contrast(frame: pl.DataFrame, leg: str = "g1", control: bool = False, estimator: str = "t",
               stock_only: bool = False, nu: float = estimators.NU) -> dict[str, float]:
-    """theta_I, theta_R and the two-sided test of their difference for one robustness variant."""
-    X, names = estimators.impact_design(frame, GROUPS)
+    """theta_I, theta_R and the two-sided test of their difference for one robustness variant; outcomes
+    and band flags are signed by side, so buys and sells read the same way."""
+    X, names = design(frame)
+    side = frame["side"].to_numpy()
     if control:  # day-t control: conditions on a post-trade outcome, so it is a collider (PLAN item 4)
-        X, names = np.column_stack([X, frame["id_abn"].to_numpy() / frame["sigma"].to_numpy()]), (*names, "day0")
-    y = frame[f"{leg}_abn"].to_numpy() / frame["sigma"].to_numpy()
-    band = frame["open_band_next"].to_numpy()
+        X, names = np.column_stack([X, side * frame["id_abn"].to_numpy() / frame["sigma"].to_numpy()]), (*names, "day0")
+    y = side * frame[f"{leg}_abn"].to_numpy() / frame["sigma"].to_numpy()
+    band = side * frame["open_band_next"].to_numpy()
     clusters = (frame["symbol"].to_numpy(),) if stock_only else (frame["symbol"].to_numpy(), frame["date"].to_numpy())
     if estimator == "ols":
         fit = estimators.ols(y, X, names, *clusters)
@@ -117,9 +127,9 @@ def _contrast(frame: pl.DataFrame, leg: str = "g1", control: bool = False, estim
 def robustness(cell: pl.DataFrame) -> dict[str, dict[str, float]]:
     """PLAN section 8 items computable from the event table (1, 2, 4, 9, 10 in part), each a variant of
     the primary contrast; NOT_RUN lists the rest with the reason."""
-    nu = max(NU_GRID, key=lambda v: estimators.censored_t(
-        cell["g1_abn"].to_numpy() / cell["sigma"].to_numpy(), *estimators.impact_design(cell, GROUPS),
-        cell["open_band_next"].to_numpy() > 0, cell["open_band_next"].to_numpy() < 0, nu=v).loglik)
+    side = cell["side"].to_numpy()
+    y, band = side * cell["g1_abn"].to_numpy() / cell["sigma"].to_numpy(), side * cell["open_band_next"].to_numpy()
+    nu = max(NU_GRID, key=lambda v: estimators.censored_t(y, *design(cell), band > 0, band < 0, nu=v).loglik)
     year = pl.col("date").dt.year()
     return {
         "1 official close baseline (g1c)": _contrast(cell, leg="g1c"),
@@ -220,13 +230,35 @@ def figure1(results: dict, path: Path) -> None:
     """(A) cumulative sigma-unit path per sqrt(x) by group with the disclosure marker; (B) the binned
     day-0 curve with the delta = 1/2 reference Y_obs * sqrt(x)."""
     fig, (left, right) = plt.subplots(1, 2, figsize=(12, 4.6), dpi=200, facecolor=SURFACE)
+    _path_panel(left, results["path"], "A. Price path around a disclosed buy",
+                "cumulative abnormal return / sigma, per sqrt(Q/ADV)")
+    _binned_panel(right, results)
+    for ax in (left, right):
+        _style(ax)
+    fig.tight_layout()
+    fig.savefig(path, facecolor=SURFACE, bbox_inches="tight")
+    plt.close(fig)
+
+
+def figure2(results: dict, path: Path) -> None:
+    """SPEC v2: the sell-side cumulative path, signed so that a move in the sell's direction is positive."""
+    fig, ax = plt.subplots(figsize=(6.4, 4.6), dpi=200, facecolor=SURFACE)
+    _path_panel(ax, results["c2"]["path"], "Price path around a disclosed sell (signed)",
+                "signed cumulative abnormal return / sigma, per sqrt(Q/ADV)")
+    _style(ax)
+    fig.tight_layout()
+    fig.savefig(path, facecolor=SURFACE, bbox_inches="tight")
+    plt.close(fig)
+
+
+def _path_panel(left: plt.Axes, paths: dict, title: str, ylabel: str) -> None:
     positions = np.arange(len(PATH_LABELS))
     for g in GROUPS:
-        values, se = np.array(results["path"][g]["values"]), np.array(results["path"][g]["se"])
+        values, se = np.array(paths[g]["values"]), np.array(paths[g]["se"])
         left.fill_between(positions, values - 1.96 * se, values + 1.96 * se, color=SERIES[g], alpha=0.10, linewidth=0)
         left.plot(positions, values, color=SERIES[g], linewidth=1.5, marker="o", markersize=5,
                   markeredgecolor=SURFACE, markeredgewidth=1.5, label=GROUP_NAMES[g])
-    ends = {g: results["path"][g]["values"][-1] for g in GROUPS}
+    ends = {g: paths[g]["values"][-1] for g in GROUPS}
     low, high = left.get_ylim()
     if abs(ends["I"] - ends["R"]) > 0.06 * (high - low):  # colliding end labels are dropped; the legend stays
         for g, end in ends.items():
@@ -236,10 +268,12 @@ def figure1(results: dict, path: Path) -> None:
     left.text(3.55, left.get_ylim()[1], "disclosure", color=INK_2, fontsize=8, va="top")
     left.axhline(0, color=AXIS, linewidth=0.8)
     left.set_xticks(positions, PATH_LABELS, fontsize=8)
-    left.set_ylabel("cumulative abnormal return / sigma, per sqrt(Q/ADV)", color=INK_2, fontsize=8)
-    left.set_title("A. Price path around a disclosed buy", color=INK, fontsize=10, loc="left")
+    left.set_ylabel(ylabel, color=INK_2, fontsize=8)
+    left.set_title(title, color=INK, fontsize=10, loc="left")
     left.legend(frameon=False, fontsize=8, labelcolor=INK_2)
 
+
+def _binned_panel(right: plt.Axes, results: dict) -> None:
     binned = pl.DataFrame(results["binned"])
     for g, dodge in zip(GROUPS, (0.96, 1.04)):  # small multiplicative offset so the groups' bins do not overprint
         part = binned.filter(pl.col("group") == g)
@@ -258,11 +292,6 @@ def figure1(results: dict, path: Path) -> None:
     right.set_title("B. Day-0 conditional response, binned", color=INK, fontsize=10, loc="left")
     # below the axis: the error bars reach into every corner of the plot area
     right.legend(frameon=False, fontsize=8, labelcolor=INK_2, loc="upper center", bbox_to_anchor=(0.5, -0.13), ncol=3)
-    for ax in (left, right):
-        _style(ax)
-    fig.tight_layout()
-    fig.savefig(path, facecolor=SURFACE, bbox_inches="tight")
-    plt.close(fig)
 
 
 def write_outputs(results: dict, dest: Path) -> None:
@@ -271,3 +300,45 @@ def write_outputs(results: dict, dest: Path) -> None:
     table1(results).write_csv(dest / "table1.csv")
     pl.DataFrame([{"variant": k, **v} for k, v in results["robustness"].items()]).write_csv(dest / "robustness.csv")
     figure1(results, dest / "figure1.png")
+
+
+def run_v2(out: Path, repo: Path = REPO) -> dict:
+    """SPEC v2: C2, the sell-side confirmatory test with its path, placebo loadings and robustness; E1,
+    pooled buys and sells (exploratory)."""
+    require_spec(repo, SPEC_V2_TAG)
+    table = pl.read_parquet(out / "event_table.parquet")
+    buys = estimators.common_support(estimators.primary_cell(table, side=1))
+    sells = estimators.common_support(estimators.primary_cell(table, side=-1))
+    counts = {g: sells.filter(pl.col("stock_type") == g).height for g in GROUPS}
+    stacked = estimators.stacked_legs(sells, GROUPS, legs=PATH_LEGS)
+    placebo = estimators.placebo_loadings(sells, GROUPS)
+    pooled = pl.concat([buys, sells], how="vertical_relaxed")
+    return {
+        "c2": {
+            "counts": counts,
+            "descriptive_only": min(counts.values()) < 1000,  # SPEC v2 power gate
+            "test": _contrast(sells),
+            "path": {g: _path(stacked, g) for g in GROUPS},
+            "placebo": {leg: {g: _test(*v) for g, v in by_group.items()} for leg, by_group in placebo.items()},
+            "robustness": robustness(sells),
+        },
+        "e1_exploratory": {
+            "counts": {g: pooled.filter(pl.col("stock_type") == g).height for g in GROUPS},
+            "test": _contrast(pooled),
+        },
+    }
+
+
+def table2(results: dict) -> pl.DataFrame:
+    """SPEC v2 rows: C2 and its robustness variants, then E1."""
+    rows = [{"statistic": "C2 sells (confirmatory)", **results["c2"]["test"]}]
+    rows += [{"statistic": f"C2 robustness: {k}", **v} for k, v in results["c2"]["robustness"].items()]
+    rows.append({"statistic": "E1 pooled buys and sells (exploratory)", **results["e1_exploratory"]["test"]})
+    return pl.DataFrame(rows)
+
+
+def write_outputs_v2(results: dict, dest: Path) -> None:
+    dest.mkdir(parents=True, exist_ok=True)
+    (dest / "results_v2.json").write_text(json.dumps(results, indent=2, default=str), encoding="utf-8")
+    table2(results).write_csv(dest / "table2.csv")
+    figure2(results, dest / "figure2.png")
