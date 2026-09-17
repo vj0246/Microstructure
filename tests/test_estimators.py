@@ -60,7 +60,7 @@ def test_primary_cell_applies_every_preregistered_condition():
     breaks = [
         {"date": date(2013, 3, 28)}, {"side": -1}, {"series": "BE"}, {"stock_type": "S"}, {"stock_type": "R"},
         {"isolated": False}, {"news": True}, {"calendar_skip": True}, {"last_band": 1}, {"prev_last_raw": 9.5},
-        {"age": 40}, {"sigma": None}, {"g1": None},
+        {"age": 40}, {"sigma": None}, {"g1": None}, {"adv": 0.0},
     ]
     rows = [base, {**base, "stock_type": "R", "novel": True}] + [{**base, **b} for b in breaks]
     kept = estimators.primary_cell(pl.DataFrame(rows))

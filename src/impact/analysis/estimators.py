@@ -19,7 +19,8 @@ MIN_AGE = 70  # trading days since listing
 
 def quality(table: pl.DataFrame) -> pl.DataFrame:
     """Conditions every confirmatory cell shares: g1 window, EQ series, no news or calendar skip, LAST_t
-    off the bands, unadjusted price >= Rs 10, listed >= 70 days, and sigma, ADV, bucket and g1 known."""
+    off the bands, unadjusted price >= Rs 10, listed >= 70 days, and sigma, bucket and g1 known with ADV positive (a zero-volume median ADV
+    leaves x undefined)."""
     return table.filter(
         pl.col("date").is_between(*G1_WINDOW)
         & (pl.col("series") == "EQ")
@@ -29,6 +30,7 @@ def quality(table: pl.DataFrame) -> pl.DataFrame:
         & (pl.col("prev_last_raw") >= PRICE_FLOOR)
         & (pl.col("age") >= MIN_AGE)
         & pl.all_horizontal(pl.col("sigma", "adv", "bucket", "g1").is_not_null())
+        & (pl.col("adv") > 0)
     )
 
 

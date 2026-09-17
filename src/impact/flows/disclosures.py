@@ -238,6 +238,7 @@ def continuation_forecast(
     starts = (
         starts.join(flow, on=["client_norm", "symbol", "day"], how="left")
         .join(scale, on=["symbol", "date"])
+        .filter(pl.col("adv") > 0)  # a zero ADV makes f undefined and would poison every later running mean
         .with_columns(f=pl.col("cont").fill_null(0) * pl.col("cum") / pl.col("adv"), lx=pl.col("x").log10())
     )
     early = starts.filter(pl.col("date") < cut_before)["lx"]

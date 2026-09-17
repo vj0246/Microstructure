@@ -85,3 +85,7 @@ The ranked list in `PLAN.md` section 8, run as specified there.
   - The primary test is descriptive because the M2 power gate failed (section 7).
   - The D4 simulation ran before the freeze and uses no market data. With churners present, a free exponent is biased by about -0.44, which supports dropping it.
   - No outcome by trader type had been computed.
+- **17 September 2026: implementation fix, tag `spec-v1.1`.** The first `impact report` run stopped inside S1, before writing any output.
+  - **Cause.** 189 event stock-days have a zero median-volume ADV, which leaves x undefined. One such run-start made F-hat NaN for 5,379 events, 256 of them in the S1 cell, and the NaN outcomes broke the likelihood.
+  - **Fix.** Confirmatory cells (`quality`) and F-hat run-starts now require ADV > 0.
+  - **Effect.** The primary cell had no such events and is unchanged. The fix was diagnosed from forecast inputs only, and no outcome was read before this tag.

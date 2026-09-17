@@ -135,14 +135,16 @@ def test_continuation_forecast_is_point_in_time():
     cal = calendar(80)
     day = cal["date"].to_list()
 
-    def forecast(extra):
+    def forecast(extra, zero_adv=()):
         rows = [(day[10], "X", 100), (day[12], "X", 200), (day[30], "Y", 100), *extra]  # client A, type I
         clients = pl.DataFrame(rows, schema=["date", "symbol", "net"], orient="row").with_columns(
             client_norm=pl.lit("A"), directional=pl.lit(True), ctype=pl.lit("I")
         )
         stock_days = [(day[10], "X"), (day[12], "X"), (day[30], "Y"), (day[32], "Y"), (day[15], "Z"), (day[16], "Z"), (day[70], "Z")]
-        table = pl.DataFrame(stock_days, schema=["date", "symbol"], orient="row").with_columns(
-            adv=pl.lit(100.0), cum=pl.lit(1.0), x=pl.lit(1.0), stock_type=pl.lit("I")
+        table = pl.DataFrame(stock_days + list(zero_adv), schema=["date", "symbol"], orient="row").with_columns(
+            adv=pl.when(pl.struct("date", "symbol").is_in([{"date": d, "symbol": s} for d, s in zero_adv]))
+            .then(0.0).otherwise(100.0),
+            cum=pl.lit(1.0), x=pl.lit(1.0), stock_type=pl.lit("I"),
         )
         out = disclosures.continuation_forecast(clients, table, cal, cut_before=day[50], min_cell=1)
         return {d: f for d, s, f in out.filter(pl.col("symbol") == "Z").rows()}
@@ -152,6 +154,8 @@ def test_continuation_forecast_is_point_in_time():
     assert base[day[16]] == pytest.approx(2.0)  # 200 shares on day 12 / ADV 100
     assert base[day[70]] == pytest.approx(1.0)  # mean of 2.0 and the day-30 start's 0.0
     later = forecast([(day[32], "Y", 300)])  # continuation that happens after day 16
+    illiquid = forecast([(day[40], "W", 100)], zero_adv=[(day[40], "W")])  # a run-start with ADV 0 is ignored
+    assert illiquid[day[70]] == pytest.approx(1.0)
     assert later[day[16]] == base[day[16]] and later[day[70]] == pytest.approx(2.5)
 
 
