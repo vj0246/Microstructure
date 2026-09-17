@@ -256,11 +256,12 @@ def figure1(results: dict, path: Path) -> None:
     right.set_xlabel("disclosed net flow / ADV (Q/ADV)", color=INK_2, fontsize=8)
     right.set_ylabel("day-0 abnormal return / sigma (impact plus selection)", color=INK_2, fontsize=8)
     right.set_title("B. Day-0 conditional response, binned", color=INK, fontsize=10, loc="left")
-    right.legend(frameon=False, fontsize=8, labelcolor=INK_2)
+    # below the axis: the error bars reach into every corner of the plot area
+    right.legend(frameon=False, fontsize=8, labelcolor=INK_2, loc="upper center", bbox_to_anchor=(0.5, -0.13), ncol=3)
     for ax in (left, right):
         _style(ax)
     fig.tight_layout()
-    fig.savefig(path, facecolor=SURFACE)
+    fig.savefig(path, facecolor=SURFACE, bbox_inches="tight")
     plt.close(fig)
 
 

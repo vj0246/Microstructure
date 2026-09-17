@@ -129,6 +129,64 @@ The gate is 95%, so the final round misses it by one name. The errors run one wa
   |---|---|---|---|---|
   | 5-day continuation | 9.5% | 9.6% | 11.1% | 22.9% |
 
+## Results (M5, run under `spec-v1.1`)
+
+![Figure 1](docs/figure1.png)
+
+After common support, the primary cell holds **791 institutional and 751 reference buys**. Both groups are below the 1,000 pre-registered as the power gate, so every number here is **descriptive**.
+
+| Quantity | Estimate |
+|---|---|
+| θ_I, overnight abnormal return per √(Q/ADV), in σ units | **0.061** (se 0.010) |
+| θ_R | **0.022** (se 0.014) |
+| θ_I − θ_R | z = 2.86, p = 0.004 |
+| D1: pooled day-0 slope Y_obs (within bucket) | −0.12 (se 0.03) |
+| S1: information bound, k = 1, 2, 3 | z = −11.4, −13.7, −14.0; breakdown at k = 1 |
+| Placebo run-up r_m1 | I: z = −2.06 (p = 0.04). R: z = −0.55 |
+| S2: R retention (mechanical and fair, τ = 5 and 20) | all \|z\| < 0.7 |
+| S3: identity news on exact crosses, α_I − α_R | z = 1.03, p = 0.30 |
+| S4: churner-only flow, θ_P | +0.011 (se 0.009), one-sided p = 0.89 |
+| Holm (S1 to S4) | nothing significant |
+
+**What the numbers say.**
+- **Size of the effect.** An institutional buy of one day's volume, in a stock with 2.5% daily σ, is followed by an overnight abnormal return of about **15 bp**. A reference buy of the same size is followed by about **5 bp**.
+- **Institutional path.** Institutions buy after small declines, and on days when the price falls more the larger their buy is relative to ADV. The price then rebounds overnight, right after the disclosure, and keeps partly recovering to t+20, where the confidence interval includes zero.
+- **Reference path.** Reference buys drift up slightly on day 0 and overnight, then give it back by t+20.
+- **Day-0 level versus slope.** The day-0 *level* for disclosed buys is about +1σ. The within-bucket *slope* on √x is negative, which points to selection (buying into weakness, and at-band days are excluded) rather than a price-impact law.
+- **Why S1 is uninformative.** The bound caps anticipated continuation at Y_UB = 1σ per √x, because the observed day-0 slope is negative and the floor applies. That cap is about 16 times θ_I, so subtracting even one unit of expected continuation removes the premium. The test cannot separate "news about the institution" from "the market pricing the institution's future buying".
+- **Why S2 covers R only.** Institutions load on the r_m1 placebo, so S2 was run for R only, where it has no power.
+
+**Robustness** (PLAN section 8), for the contrast θ_I − θ_R:
+
+| Variant | n | θ_I | θ_R | z |
+|---|---|---|---|---|
+| Primary (censored t, ν = 4, stock × date clusters) | 1,542 | 0.061 | 0.022 | 2.86 |
+| ν profiled (best ν = 2) | 1,542 | 0.057 | 0.013 | 3.38 |
+| Censored events dropped | 1,533 | 0.060 | 0.020 | 2.96 |
+| Day-0 control (collider caveat) | 1,542 | 0.055 | 0.022 | 2.39 |
+| Excluding 2020-21 | 1,319 | 0.059 | 0.023 | 2.47 |
+| 2013-19 only | 726 | 0.065 | 0.016 | 2.70 |
+| Stock-only clustering | 1,542 | 0.061 | 0.022 | 2.90 |
+| Official close (VWAP) baseline | 1,542 | 0.054 | 0.029 | 1.60 |
+| 2020-26 only | 816 | 0.052 | 0.018 | 1.38 |
+| Uncensored OLS | 1,542 | 0.052 | 0.040 | 0.67 |
+
+The gap survives:
+- heavier tails;
+- dropping censored events;
+- conditioning on the day-0 move, so it is not simply an overnight reversal of the day's decline;
+- dropping the COVID years;
+- clustering by stock only.
+
+It weakens in three variants:
+- **VWAP-close baseline.** Part of the gap may be bounce from a LAST printed at the bid.
+- **2020-26.** θ_I barely moves, but the gap loses significance on fewer events.
+- **OLS.** A few heavy-tailed reference outliers dominate the least-squares fit.
+
+Robustness items not run: 3 and 5 to 8, which need cells the event table does not carry, plus date fixed effects and the pigeonhole bootstrap from item 10. The reasons are listed in `results.json`.
+
+**Bottom line.** Descriptively, the overnight return after a disclosed buy is about three times as large per unit of √size when the buyer is an institution. The study cannot say whether that premium is news about fundamentals or the price of expected continued institutional buying. The sample is underpowered, and the type labels are about 94.5% accurate, with the errors biasing toward no difference.
+
 ## D4: why no free impact exponent
 
 This is a simulated panel of 1,500 stocks with a true law r = Y·σ·(|net|/ADV)^0.5 plus t-noise, run over 10 seeds per scenario. Profile bias is for the censored-t fit; the binned fit is the slope of log mean response on log x.
@@ -164,7 +222,7 @@ src/impact/
   clean/          symbols.py, adjustment.py, panel.py
   flows/          disclosures.py, trader_types.py, client_types.csv
   analysis/       estimators.py, truncation_sim.py, report.py
-docs/             PLAN.md (design and rulings), SPEC.md (pre-registration)
+docs/             PLAN.md (design and rulings), SPEC.md (pre-registration), figure1.png
 scripts/          run_pipeline.cmd (resumable pull, build, simulation)
 tests/            one file per module (100 tests)
 ```
