@@ -1,0 +1,26 @@
+[project]
+name = "impact"
+version = "0.1.0"
+description = "Overnight price response to disclosed large trades on NSE"
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.28",
+    "matplotlib>=3.11",
+    "numpy>=2.5",
+    "polars>=1.44",
+    "pydantic-settings>=2.15",
+    "scipy>=1.18",
+]
+
+[project.scripts]
+impact = "impact.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=9.1", "pyfixest>=0.60"]  # pyfixest only cross-checks the sandwich in tests
+
+[build-system]
+requires = ["uv_build>=0.11,<0.12"]
+build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
