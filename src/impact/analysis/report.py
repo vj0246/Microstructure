@@ -17,7 +17,9 @@ import matplotlib.pyplot as plt  # noqa: E402  (backend must be set before pyplo
 
 from impact.analysis import estimators  # noqa: E402
 from impact.clean import panel  # noqa: E402
-from impact.flows import disclosures  # noqa: E402
+from impact import pipeline  # noqa: E402
+from impact.clean import symbols  # noqa: E402
+from impact.flows import disclosures, trader_types  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[3]
 SPEC_TAG = "spec-v1"
@@ -342,3 +344,40 @@ def write_outputs_v2(results: dict, dest: Path) -> None:
     (dest / "results_v2.json").write_text(json.dumps(results, indent=2, default=str), encoding="utf-8")
     table2(results).write_csv(dest / "table2.csv")
     figure2(results, dest / "figure2.png")
+
+
+DICTIONARY_VARIANTS = ("full", "name inferences only", "no dictionary")
+
+
+def _variant_dictionary(name: str) -> pl.DataFrame:
+    if name == "no dictionary":
+        return pl.DataFrame(schema={"client_norm": pl.String, "dict_code": pl.String})
+    return trader_types.read_dictionary(drop_recalled=name == "name inferences only")
+
+
+def typing_sensitivity(raw: Path, out: Path) -> pl.DataFrame:
+    """How much the hand dictionary moves the reported tests (v1 buys, C2 sells).
+
+    The dictionary is the only manual input to the typing: its entries are the author's recollection or
+    a reading of the client name, never a filing. Each variant re-types every client-day from the raw
+    deals, rebuilds stock-day types, and re-runs both contrasts on the rebuilt cells."""
+    breaks = symbols.canonical_breaks(symbols.read_symbol_changes(pipeline._latest(raw / "master", "symbolchange_*.csv")))
+    prices = pl.scan_parquet(str(out / "prices" / "*.parquet")).select(pipeline.PRICE_INPUT)
+    flags = pipeline._scope_flags(prices, breaks)
+    table = pl.read_parquet(out / "event_table.parquet").drop("side", "stock_type", "type_share")
+    named = set(trader_types.read_dictionary()["client_norm"])
+    rows = []
+    for variant in DICTIONARY_VARIANTS:
+        _, clients, _ = pipeline._flows(raw, breaks, flags, _variant_dictionary(variant))
+        typed = table.join(disclosures.stock_day_types(clients), on=["date", "symbol"])
+        for side, label in ((1, "v1 buys"), (-1, "C2 sells")):
+            cell = estimators.common_support(estimators.primary_cell(typed, side=side))
+            counts = {g: cell.filter(pl.col("stock_type") == g).height for g in GROUPS}
+            touched = cell.join(
+                clients.filter(pl.col("directional") & (pl.col("ctype") != "P") & pl.col("client_norm").is_in(named))
+                .select("date", "symbol").unique().with_columns(named=pl.lit(True)),
+                on=["date", "symbol"], how="left",
+            )["named"].fill_null(False).mean()
+            rows.append({"dictionary": variant, "test": label, "n_I": counts["I"], "n_R": counts["R"],
+                         "dictionary_events": touched, **_contrast(cell)})
+    return pl.DataFrame(rows)

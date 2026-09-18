@@ -1,30 +1,30 @@
-client_norm,type,subtype,note
-DAIICHI SANKYO CO LTD,S,parent,Ranbaxy parent [recalled]
-TOBACCO MANUFACTURERS INDIA LTD,S,parent,BAT group holder of ITC [recalled]
-HULST B V,S,sponsor,Baring PE Asia vehicle that controlled Coforge [recalled]
-VODAFONE TELECOMMUNICATIONS INDIA LTD,S,parent,Vodafone group [recalled]
-TWIN STAR HOLDINGS LTD,S,parent,Vedanta group [recalled]
-VEDANTA LTD,S,parent,group company stakes [recalled]
-CAIRN UK HOLDINGS LTD,S,parent,Cairn India promoter [recalled]
-CITIGROUP STRATEGIC HOLDINGS MAURITIUS LTD,S,strategic_stake,strategic holding vehicle [recalled]
-ING MAURITIUS INVESTMENTS I,S,parent,ING Vysya Bank promoter [recalled]
-LARSEN TOUBRO LTD,S,acquirer,open-market acquisition of Mindtree [recalled]
-KAYAK INVESTMENTS HOLDING PTE LTD,S,sponsor,KKR vehicle [recalled]
-CA ROVER HOLDINGS,S,sponsor,Carlyle vehicle [recalled]
-BCP TOPCO IX PTE LTD,S,sponsor,Blackstone vehicle [recalled]
-BREP ASIA II INDIAN HOLDING CO IX NQ PTE LTD,S,sponsor,Blackstone real estate vehicle [recalled]
-TPG ASIA VII SF PTE LTD,S,sponsor,TPG vehicle [recalled]
-GENERAL ATLANTIC SINGAPORE FUND PTE LTD,S,sponsor,General Atlantic vehicle [recalled]
-ANTFIN SINGAPORE HOLDING PTE LTD,S,sponsor,Ant Group vehicle [recalled]
-S B ADANI FAMILY TRUST,S,promoter,Adani promoter group [recalled]
-BRIJ MOHAN LAL OM PARKASH,S,promoter,Hero promoter group [recalled]
-BPCL TRUST FOR INVESTMENT IN SHARES,S,treasury,BPCL treasury-share trust [recalled]
-AMANSA HOLDINGS PVT LTD,I,fpi,Amansa Capital fund [recalled]
-AMANSA CAPITAL PVT LTD,I,fpi,Amansa Capital fund manager [recalled]
-FINANCIAL TECHNOLOGIES INDIA LTD,S,parent,MCX promoter until 2014 [recalled]
-DYNASTY ACQUISITION FPI LTD,S,sponsor,TPG vehicle [recalled]
-HOUSING DEVELOPMENT FINANCE CORPORATION LTD,I,bank,HDFC Ltd financial institution [recalled]
-CENTELLA MAURITIUS HOLDINGS LTD,S,sponsor,Olympus Capital vehicle [recalled]
-L T FINANCE LTD,I,bank,NBFC lender selling pledged shares
-KOTAK MAHINDRA INVESTMENTS LTD,I,bank,NBFC lender selling pledged shares
-AUSTRALIANSUPER,I,pension,Australian pension fund
+client_norm,type,subtype,evidence,note
+DAIICHI SANKYO CO LTD,S,parent,unverified_recall,Ranbaxy parent
+TOBACCO MANUFACTURERS INDIA LTD,S,parent,unverified_recall,BAT group holder of ITC
+HULST B V,S,sponsor,unverified_recall,Baring PE Asia vehicle that controlled Coforge
+VODAFONE TELECOMMUNICATIONS INDIA LTD,S,parent,unverified_recall,Vodafone group
+TWIN STAR HOLDINGS LTD,S,parent,unverified_recall,Vedanta group
+VEDANTA LTD,S,parent,unverified_recall,group company stakes
+CAIRN UK HOLDINGS LTD,S,parent,unverified_recall,Cairn India promoter
+CITIGROUP STRATEGIC HOLDINGS MAURITIUS LTD,S,strategic_stake,unverified_recall,strategic holding vehicle
+ING MAURITIUS INVESTMENTS I,S,parent,unverified_recall,ING Vysya Bank promoter
+LARSEN TOUBRO LTD,S,acquirer,unverified_recall,open-market acquisition of Mindtree
+KAYAK INVESTMENTS HOLDING PTE LTD,S,sponsor,unverified_recall,KKR vehicle
+CA ROVER HOLDINGS,S,sponsor,unverified_recall,Carlyle vehicle
+BCP TOPCO IX PTE LTD,S,sponsor,unverified_recall,Blackstone vehicle
+BREP ASIA II INDIAN HOLDING CO IX NQ PTE LTD,S,sponsor,unverified_recall,Blackstone real estate vehicle
+TPG ASIA VII SF PTE LTD,S,sponsor,unverified_recall,TPG vehicle
+GENERAL ATLANTIC SINGAPORE FUND PTE LTD,S,sponsor,unverified_recall,General Atlantic vehicle
+ANTFIN SINGAPORE HOLDING PTE LTD,S,sponsor,unverified_recall,Ant Group vehicle
+S B ADANI FAMILY TRUST,S,promoter,unverified_recall,Adani promoter group
+BRIJ MOHAN LAL OM PARKASH,S,promoter,unverified_recall,Hero promoter group
+BPCL TRUST FOR INVESTMENT IN SHARES,S,treasury,unverified_recall,BPCL treasury-share trust
+AMANSA HOLDINGS PVT LTD,I,fpi,unverified_recall,Amansa Capital fund
+AMANSA CAPITAL PVT LTD,I,fpi,unverified_recall,Amansa Capital fund manager
+FINANCIAL TECHNOLOGIES INDIA LTD,S,parent,unverified_recall,MCX promoter until 2014
+DYNASTY ACQUISITION FPI LTD,S,sponsor,unverified_recall,TPG vehicle
+HOUSING DEVELOPMENT FINANCE CORPORATION LTD,I,bank,unverified_recall,HDFC Ltd financial institution
+CENTELLA MAURITIUS HOLDINGS LTD,S,sponsor,unverified_recall,Olympus Capital vehicle
+L T FINANCE LTD,I,bank,name_inference,NBFC lender selling pledged shares
+KOTAK MAHINDRA INVESTMENTS LTD,I,bank,name_inference,NBFC lender selling pledged shares
+AUSTRALIANSUPER,I,pension,name_inference,pension fund by name

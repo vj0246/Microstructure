@@ -68,8 +68,8 @@ def _scope_flags(prices: pl.LazyFrame, breaks: pl.DataFrame) -> dict[str, pl.Dat
     }
 
 
-def _flows(
-    raw: Path, breaks: pl.DataFrame, flags: dict[str, pl.DataFrame]
+def _flows(  # `dictionary`: None uses the full hand dictionary; the sensitivity run passes variants
+    raw: Path, breaks: pl.DataFrame, flags: dict[str, pl.DataFrame], dictionary: pl.DataFrame | None = None
 ) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
     """Bulk deals from the price start (earlier disclosures still exclude days from ADV and sigma
     windows), block legs netted out, exact crosses flagged; typed client-days; stock-day flows with
@@ -96,7 +96,9 @@ def _flows(
     insiders = pit.filter(pl.col("category").str.contains("(?i)promoter|director|kmp|key managerial|relative"))
     insiders = symbols.relabel(insiders, breaks).select("symbol", client_norm=disclosures.normalize_client(pl.col("name")))
     flagged = disclosures.flag_crosses(disclosures.net_out_block(deals("bulk_deals"), deals("block_deals")))
-    clients = trader_types.classify(disclosures.client_days(flagged), insiders, trader_types.read_dictionary())
+    if dictionary is None:
+        dictionary = trader_types.read_dictionary()
+    clients = trader_types.classify(disclosures.client_days(flagged), insiders, dictionary)
     days = disclosures.stock_days(clients).join(disclosures.stock_day_types(clients), on=["date", "symbol"], how="left")
     return flagged, mark(clients), mark(days)
 

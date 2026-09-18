@@ -69,11 +69,38 @@ All data comes from NSE public archives and APIs. There are 14,940 raw files in 
    - **Novel:** the client did not disclose in any stock over the previous 250 days. This applies to R only.
    - **News:** a board meeting or ex-date on t or t+1, or a results broadcast between 15:30 on t-1 and 09:00 on t+1.
 
+## What is data, and what is the author's judgement
+
+**NSE does not publish a trader category.** The I / R / P / S labels are constructed by this project, not observed. Everything downstream of them inherits that.
+
+Three inputs are judgement, not data, and none of them is sourced from a filing:
+
+1. **The name-pattern rules** (`trader_types.py`). Hand-written regular expressions: "MUTUAL FUN" implies a fund, "FVCI" implies a sponsor, and so on. They are deterministic and auditable, but they were written by the author.
+2. **The hand dictionary** (`client_types.csv`, 29 entries). Its `evidence` column is explicit:
+   - **`unverified_recall` (26 entries): the author's recollection of who a client is. It is NOT read from a filing, an NSE record, or any other source, and it may simply be wrong.** Examples: "Hulst B V is a Baring PE vehicle", "Twin Star Holdings belongs to the Vedanta group".
+   - `name_inference` (3 entries): read off the name itself, for example AustralianSuper being a pension fund.
+3. **The typing-audit verdicts** (`typing_audit_*.csv`, 1,000 names over five rounds). These are the author's calls, again partly from recollection, and rows carry `[uncertain, kept]` where the author could not decide. They set the **measured accuracy** (94.5%); they never change any client's type.
+
+**A label assigned by hand is an intervention.** So the point of the dictionary is measured, not asserted: `uv run impact sensitivity` re-types every client-day from the raw deals with the dictionary cut down or removed, rebuilds the stock-day types, and re-runs both tests.
+
+| Dictionary | Test | n_I | n_R | events touching a dictionary name | θ_I | θ_R | z | p |
+|---|---|---|---|---|---|---|---|---|
+| Full (29) | v1 buys | 791 | 751 | 0.97% | +0.061 | +0.022 | +2.86 | 0.004 |
+| Name inferences only (3) | v1 buys | 778 | 751 | 0.13% | +0.061 | +0.022 | +2.83 | 0.005 |
+| **None** | v1 buys | 778 | 751 | 0.13% | +0.061 | +0.022 | +2.83 | 0.005 |
+| Full (29) | C2 sells | 1,031 | 1,067 | 0.91% | −0.003 | +0.005 | −1.20 | 0.231 |
+| Name inferences only (3) | C2 sells | 1,023 | 1,073 | 0.81% | −0.001 | +0.004 | −0.89 | 0.376 |
+| **None** | C2 sells | 1,021 | 1,079 | 0.81% | −0.001 | +0.005 | −0.89 | 0.375 |
+
+**Reading.** Under 1% of the events in either cell involve a client the dictionary names. Deleting all 26 unverified entries moves the buy-side contrast from z = 2.86 to z = 2.83 and leaves the sell-side null a null. **Neither headline depends on the recalled labels.** What does depend on hand-written judgement is the rule set itself, and its measured accuracy is 94.5%, with errors that bias toward finding no difference.
+
+**Not verified either:** the four adversarial "reviewers" and the "judge" in `docs/PLAN.md` were roles played during the design review, not outside experts. Every claim in the plan marked `[recalled]` carries the same warning as the dictionary: it is memory, not a checked source.
+
 ## Trader types
 
 The rules are deterministic, and the first match wins:
 
-1. hand dictionary (`client_types.csv`, with its evidence noted);
+1. hand dictionary (`client_types.csv`; mostly unverified recollection, see the section above);
 2. prop-desk name patterns (P);
 3. venture and private-equity sponsors (S);
 4. regulated pools (I): sovereign, pension, insurer, mutual fund or trustee, endowment, AIF, bank or ARC;
@@ -236,7 +263,8 @@ With churners (52% of real client-days), a fitted exponent collapses toward zero
 
 ## Limitations
 
-- The typing audit misses its 95% gate by one name, and the verdicts partly rest on the author's recall.
+- The typing audit misses its 95% gate by one name, and the verdicts are the author's, partly from recall rather than from any source.
+- The trader-type labels are constructed, not published by NSE, and 26 dictionary entries are unverified recollection. Their measured effect on both headlines is negligible (see above).
 - The PIT data lacks some promoters (for example, the Kaynes founder), so some strategic sellers are typed R.
 - The buy-side test is underpowered: fewer than 1,000 events per group. The powered sell-side test (C2) is a separate question, not a replication of it.
 - The live-snapshot revision check covers 1 of the 5 trading days it needs.

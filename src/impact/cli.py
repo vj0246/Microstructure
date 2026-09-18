@@ -27,6 +27,7 @@ def main(argv: list[str] | None = None) -> None:
     confirm = sub.add_parser("report", help="confirmatory run: v1 buys (tag spec-v1) or v2 sells and pooled (tag spec-v2)")
     confirm.add_argument("--spec", choices=("v1", "v2"), default="v1")
     sub.add_parser("simulate", help="D4 gross-trigger truncation simulation: d4_simulation.csv")
+    sub.add_parser("sensitivity", help="re-run both tests without the hand dictionary: typing_sensitivity.csv")
     args = parser.parse_args(argv)
 
     settings = Settings()
@@ -39,6 +40,13 @@ def main(argv: list[str] | None = None) -> None:
         runs = truncation_sim.run(truncation_sim.SCENARIOS, range(10))
         runs.write_csv(dest / "d4_simulation.csv")
         print(truncation_sim.summary(runs))
+        return
+    if args.command == "sensitivity":
+        dest = settings.data_dir / "out"
+        dest.mkdir(parents=True, exist_ok=True)
+        rows = report.typing_sensitivity(settings.raw_dir, settings.data_dir / "parquet")
+        rows.write_csv(dest / "typing_sensitivity.csv")
+        print(rows)
         return
     if args.command == "report":
         out, dest = settings.data_dir / "parquet", settings.data_dir / "out"

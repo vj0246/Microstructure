@@ -51,3 +51,4 @@ The data version is the same as v1: `raw/manifest.jsonl`, sha256 `d78737142ebc5a
 ## 6. Change log
 
 - 17 September 2026: frozen as `spec-v2`.
+- **18 September 2026: provenance labelled and measured (no change to any test).** The hand dictionary now carries an `evidence` column: 26 of 29 entries are `unverified_recall`, the author's recollection rather than a source, and 3 are `name_inference`. `impact sensitivity` re-types every client-day with the dictionary reduced or removed and re-runs both contrasts. Under 1% of cell events touch a dictionary name; dropping it entirely moves v1 buys from z = 2.86 to 2.83 and leaves C2 sells a null (z = -1.20 to -0.89). Tagged `spec-v2.1`.

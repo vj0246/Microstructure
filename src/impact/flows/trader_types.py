@@ -1,5 +1,9 @@
 """Trader typing (PLAN J13): I institutional, R reference, P churner or prop desk, S strategic.
 
+The hand dictionary in `client_types.csv` is the one manual input: the author assigned those types
+from recollection or from the name, never from a filing. Its `evidence` column says which, and
+`report.typing_sensitivity` re-runs the confirmatory tests without it.
+
 Deterministic, first match wins: hand dictionary; prop-desk name patterns; venture and private-equity
 sponsors (S); pooled institutions (sovereign, pension, insurer, mutual fund or trustee, endowment, AIF,
 bank or asset-reconstruction trust); strategic for this stock; investment managers, foreign or fund
@@ -78,11 +82,17 @@ _STOP = [
 ]
 
 
-def read_dictionary(path: Path = DICTIONARY) -> pl.DataFrame:
-    """Hand overrides: client_norm (normalized here too), type, subtype, note."""
+def read_dictionary(path: Path = DICTIONARY, drop_recalled: bool = False) -> pl.DataFrame:
+    """Hand overrides: client_norm (normalized here too), type, subtype, evidence, note.
+
+    `evidence` is "unverified_recall" (the author's recollection of who the client is, NOT read from any
+    filing or NSE record) or "name_inference" (read off the name itself). Neither is source data.
+    `drop_recalled` keeps only the name inferences, which the typing sensitivity run uses."""
+    rows = pl.read_csv(path, infer_schema=False)
+    if drop_recalled:
+        rows = rows.filter(pl.col("evidence") != "unverified_recall")
     return (
-        pl.read_csv(path, infer_schema=False)
-        .with_columns(client_norm=normalize_client(pl.col("client_norm")))
+        rows.with_columns(client_norm=normalize_client(pl.col("client_norm")))
         .select("client_norm", pl.concat_str(pl.col("type"), pl.lit(":"), pl.col("subtype")).alias("dict_code"))
         .unique("client_norm")
     )

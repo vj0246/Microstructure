@@ -210,3 +210,11 @@ def test_dictionary_file_is_well_formed():
     dictionary = trader_types.read_dictionary()
     assert dictionary.height > 0
     assert dictionary["dict_code"].str.split(":").list.first().is_in(["I", "R", "P", "S"]).all()
+
+
+def test_every_dictionary_entry_declares_its_evidence():
+    rows = pl.read_csv(trader_types.DICTIONARY, infer_schema=False)
+    assert rows["evidence"].is_in(["unverified_recall", "name_inference"]).all()
+    # the sensitivity run needs the unverified recollections to be droppable
+    inferred = trader_types.read_dictionary(drop_recalled=True)
+    assert 0 < inferred.height < trader_types.read_dictionary().height
