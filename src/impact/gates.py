@@ -219,11 +219,11 @@ def _typing_audit(out: Path) -> list[str]:
         )
         sample = names.sample(n=min(AUDIT_SIZE, names.height), seed=AUDIT_SEED).sort("assigned", "client_norm")
         sample.with_columns(verdict=pl.lit(""), note=pl.lit("")).write_csv(sheet)
-        return [f"TODO typing audit sheet written to {sheet}: fill `verdict` (I, R, P or S) on every row, then rerun"]
+        return [f"PENDING typing audit sheet written to {sheet}: fill `verdict` (I, R, P or S) on every row, then rerun"]
     audit = pl.read_csv(sheet, infer_schema=False).with_columns(pl.col("verdict").fill_null("").str.strip_chars().str.to_uppercase())
     filled = audit.filter(pl.col("verdict").is_in(["I", "R", "P", "S"]))
     if filled.height < audit.height:
-        return [f"TODO typing audit: {filled.height}/{audit.height} verdicts filled in {sheet}"]
+        return [f"PENDING typing audit: {filled.height}/{audit.height} verdicts filled in {sheet}"]
     agreement = (filled["verdict"] == filled["assigned"]).mean()
     misses = filled.filter(pl.col("verdict") != pl.col("assigned")).select("client_norm", "assigned", "verdict").head(10).rows()
     return [f"{'ok  ' if agreement >= 0.95 else 'FAIL'} typing audit agreement {agreement:.1%} on {filled.height} names; misses e.g. {misses}"]
@@ -279,7 +279,7 @@ def _bhav_overlap(raw: Path) -> list[str]:
     legacy = sorted((raw / "legacy_bhav" / "2024").glob("*.zip"))
     udiff = [p for p in sorted((raw / "udiff_bhav" / "2024").glob("*.zip")) if file_day(p) <= date(2024, 7, 5)]
     if not legacy or not udiff:
-        return ["TODO legacy vs UDiFF overlap: 2024 files not downloaded yet"]
+        return ["PENDING legacy vs UDiFF overlap: 2024 files not downloaded yet"]
     a = read_all(legacy, read_legacy_bhav).filter(_EQUITY).with_columns(in_a=pl.lit(True))
     b = read_all(udiff, read_udiff_bhav).filter(_EQUITY).with_columns(in_b=pl.lit(True))
     joined = a.join(b, on=_KEY, how="full", suffix="_u", coalesce=True)
@@ -303,7 +303,7 @@ def _delivery_overlap(raw: Path, every: int = 20) -> list[str]:
     legacy = {file_day(p): p for p in (raw / "legacy_bhav").glob("*/*.zip")}
     days = sorted(sec.keys() & mto.keys() & legacy.keys())[::every]
     if not days:
-        return ["TODO delivery and VWAP overlap: sec_bhavdata_full/MTO files not downloaded yet"]
+        return ["PENDING delivery and VWAP overlap: sec_bhavdata_full/MTO files not downloaded yet"]
     s = read_all([sec[d] for d in days], read_sec_full).filter(_EQUITY)
     m = read_all([mto[d] for d in days], read_mto).filter(_EQUITY)
     bhav = read_all([legacy[d] for d in days], read_legacy_bhav).filter(_EQUITY & (pl.col("volume") > 0))
@@ -407,7 +407,7 @@ def _live(raw: Path) -> list[str]:
         results[day] = live.select(key).sort(key).equals(pulled.select(key).sort(key))
         lines.append(f"{'ok  ' if results[day] else 'FAIL'} live {day}: snapshot {live.height} rows, API {pulled.height}")
     matched = sum(results.values())
-    status = "ok  " if matched >= LIVE_DAYS_REQUIRED else "TODO"
+    status = "ok  " if matched >= LIVE_DAYS_REQUIRED else "PEND"
     lines.append(f"{status} live days matched: {matched}/{LIVE_DAYS_REQUIRED} (run `impact fetch live` on separate trading days)")
     return lines
 
