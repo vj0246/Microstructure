@@ -90,3 +90,61 @@ def test_v2_outputs_are_written(tmp_path):
     assert report.table2(results).height == 3
     assert (tmp_path / "figure2.png").stat().st_size > 10_000
     assert json.loads((tmp_path / "results_v2.json").read_text())["c2"]["counts"]["R"] == 1050
+
+
+def quality_cell(side=1, n=800, seed=5, premium_where=None):
+    """A synthetic cell that passes estimators.quality(): real dates, delivery data, prices and an optional
+    institutional premium confined to the rows picked by `premium_where` (a boolean array)."""
+    from datetime import date, timedelta
+
+    import numpy as np
+    import polars as pl
+
+    cell = synthetic_cell(side, n=n, seed=seed)
+    rng = np.random.default_rng(seed)
+    high = rng.random(n) < 0.5
+    institutional = cell["stock_type"].to_numpy() == "I"
+    where = high if premium_where is None else premium_where
+    g1 = side * 0.4 * np.sqrt(cell["x"].to_numpy()) * (institutional & where) + 0.3 * rng.standard_normal(n)
+    return cell.with_columns(
+        date=pl.Series([date(2016, 1, 1) + timedelta(days=i % 80) for i in range(n)]),
+        g1_abn=pl.Series(g1), g1=pl.Series(g1), volume=pl.lit(1000), deliv_qty=pl.Series(np.where(high, 700, 300)),
+        prev_last_raw=pl.Series(rng.uniform(20, 300, n)), news=pl.lit(False), calendar_skip=pl.lit(False),
+        last_band=pl.lit(0), age=pl.lit(500), series=pl.lit("EQ"), adv=pl.lit(1.0),
+    )
+
+
+def test_delivery_flags_split_at_the_bucket_year_median_of_every_event():
+    cell = quality_cell()
+    flagged = report.delivery_flags(cell, cell)
+    assert flagged.height == cell.height
+    assert 0.3 < flagged["high"].mean() < 0.7  # the 700/1000 vs 300/1000 shares straddle each bucket median
+
+
+def test_delivery_interaction_finds_a_premium_that_lives_in_high_delivery_events():
+    cell = quality_cell()
+    out = report.delivery_test(cell, cell)
+    assert out["interaction: high minus low"]["estimate"] > 0.2
+    assert out["interaction: high minus low"]["p_one_sided"] < 0.05
+    assert sum(out["counts"].values()) == cell.height
+
+
+def test_tick_test_restricts_by_price_and_adds_a_log_price_variant():
+    out = report.tick_test(quality_cell())
+    assert out["price >= 50 (primary)"]["n"] < out["full cell"]["n"]
+    assert out["price >= 100"]["n"] < out["price >= 50 (primary)"]["n"]
+    assert out["full cell, ln price control"]["n"] == out["full cell"]["n"]
+
+
+def test_retention_levels_report_peak_t5_t20_and_placebo_status():
+    import numpy as np
+    import polars as pl
+
+    cell = quality_cell(n=800)
+    rng = np.random.default_rng(9)
+    legs = {leg: 0.2 * rng.standard_normal(cell.height) for leg in ("ov_abn", "id_abn", "d15_abn", "d620_abn", "r_m1_abn", "r_m5_abn")}
+    cell = cell.with_columns(**{k: pl.Series(v) for k, v in legs.items()})
+    out = report.retention_levels(cell)
+    assert set(out) == {"I", "R"}
+    assert set(out["I"]["levels"]) == {"peak (t+1 open)", "t+5", "t+20"}
+    assert isinstance(out["I"]["placebo_clean"], bool)

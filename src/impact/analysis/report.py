@@ -11,6 +11,7 @@ import matplotlib
 import matplotlib.ticker
 import numpy as np
 import polars as pl
+from scipy import stats
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402  (backend must be set before pyplot loads)
@@ -24,6 +25,9 @@ from impact.flows import disclosures, trader_types  # noqa: E402
 REPO = Path(__file__).resolve().parents[3]
 SPEC_TAG = "spec-v1"
 SPEC_V2_TAG = "spec-v2"
+SPEC_V3_TAG = "spec-v3"
+TICK_PRICE_FLOOR = 50.0  # SPEC v3 H1: tick Rs 0.05 is at most 10 bp
+TICK_PRICE_SENSITIVITY = 100.0
 GROUPS = ("I", "R")
 PATH_LEGS = ("r_m5", "ov", "id", "g1", "d15", "d620")
 PATH_LABELS = ("t-5", "t-1 last", "t open", "t last", "t+1 open", "t+5", "t+20")
@@ -106,13 +110,15 @@ def design(frame: pl.DataFrame) -> tuple[np.ndarray, tuple[str, ...]]:
 
 
 def _contrast(frame: pl.DataFrame, leg: str = "g1", control: bool = False, estimator: str = "t",
-              stock_only: bool = False, nu: float = estimators.NU) -> dict[str, float]:
+              stock_only: bool = False, nu: float = estimators.NU, log_price: bool = False) -> dict[str, float]:
     """theta_I, theta_R and the two-sided test of their difference for one robustness variant; outcomes
     and band flags are signed by side, so buys and sells read the same way."""
     X, names = design(frame)
     side = frame["side"].to_numpy()
     if control:  # day-t control: conditions on a post-trade outcome, so it is a collider (PLAN item 4)
         X, names = np.column_stack([X, side * frame["id_abn"].to_numpy() / frame["sigma"].to_numpy()]), (*names, "day0")
+    if log_price:  # SPEC v3 H1: absorbs the price mix without discarding events
+        X, names = np.column_stack([X, np.log(frame["prev_last_raw"].to_numpy())]), (*names, "log_price")
     y = side * frame[f"{leg}_abn"].to_numpy() / frame["sigma"].to_numpy()
     band = side * frame["open_band_next"].to_numpy()
     clusters = (frame["symbol"].to_numpy(),) if stock_only else (frame["symbol"].to_numpy(), frame["date"].to_numpy())
@@ -381,3 +387,118 @@ def typing_sensitivity(raw: Path, out: Path) -> pl.DataFrame:
             rows.append({"dictionary": variant, "test": label, "n_I": counts["I"], "n_R": counts["R"],
                          "dictionary_events": touched, **_contrast(cell)})
     return pl.DataFrame(rows)
+
+
+def tick_test(cell: pl.DataFrame) -> dict[str, dict[str, float]]:
+    """SPEC v3 H1: the I minus R overnight contrast on the full cell, above Rs 50 (primary) and Rs 100, and
+    with ln price as a control."""
+    price = pl.col("prev_last_raw")
+    return {
+        "full cell": _contrast(cell),
+        f"price >= {TICK_PRICE_FLOOR:g} (primary)": _contrast(cell.filter(price >= TICK_PRICE_FLOOR)),
+        f"price >= {TICK_PRICE_SENSITIVITY:g}": _contrast(cell.filter(price >= TICK_PRICE_SENSITIVITY)),
+        "full cell, ln price control": _contrast(cell, log_price=True),
+    }
+
+
+def delivery_flags(table: pl.DataFrame, cell: pl.DataFrame) -> pl.DataFrame:
+    """Add `high`: the stock-day's delivered share of traded quantity is above the median of all quality
+    stock-days in the same benchmark bucket and year (type ignored). Events without delivery data drop."""
+    def share(frame: pl.DataFrame) -> pl.DataFrame:
+        return frame.with_columns(share=pl.col("deliv_qty") / pl.col("volume"), year=pl.col("date").dt.year()).filter(
+            pl.col("share").is_not_null() & (pl.col("volume") > 0)
+        )
+
+    median = share(estimators.quality(table)).group_by("bucket", "year").agg(median=pl.col("share").median())
+    return share(cell).join(median, on=["bucket", "year"]).with_columns(high=pl.col("share") > pl.col("median"))
+
+
+def delivery_test(table: pl.DataFrame, cell: pl.DataFrame) -> dict[str, dict[str, float]]:
+    """SPEC v3 H2: theta for I-high, I-low, R-high and R-low in one censored-t model; reports each half's
+    I minus R contrast and the interaction (high gap minus low gap) with its one-sided p-value."""
+    flagged = delivery_flags(table, cell)
+    groups = ("I_hi", "I_lo", "R_hi", "R_lo")
+    split = flagged.with_columns(
+        stock_type=pl.col("stock_type") + pl.when(pl.col("high")).then(pl.lit("_hi")).otherwise(pl.lit("_lo"))
+    )
+    X, names = estimators.impact_design(split, groups)
+    side = split["side"].to_numpy()
+    y = side * split["g1_abn"].to_numpy() / split["sigma"].to_numpy()
+    band = side * split["open_band_next"].to_numpy()
+    fit = estimators.censored_t(y, X, names, band > 0, band < 0, split["symbol"].to_numpy(), split["date"].to_numpy())
+
+    def contrast(*terms: tuple[str, float]) -> np.ndarray:
+        vector = np.zeros(len(fit.names))
+        for group, weight in terms:
+            vector[fit.names.index(f"theta_{group}")] = weight
+        return vector
+
+    tests = {
+        "high delivery: I minus R": contrast(("I_hi", 1.0), ("R_hi", -1.0)),
+        "low delivery: I minus R": contrast(("I_lo", 1.0), ("R_lo", -1.0)),
+        "interaction: high minus low": contrast(("I_hi", 1.0), ("R_hi", -1.0), ("I_lo", -1.0), ("R_lo", 1.0)),
+    }
+    out = {}
+    for label, vector in tests.items():
+        z, p = fit.wald(vector)
+        out[label] = {"estimate": float(vector @ fit.coef), "z": z, "p": p, "p_one_sided": float(stats.norm.sf(z))}
+    out["counts"] = {g: split.filter(pl.col("stock_type") == g).height for g in groups}
+    return out
+
+
+def retention_levels(cell: pl.DataFrame) -> dict[str, dict]:
+    """SPEC v3 H3: cumulative response at the t+1 open peak, t+5 and t+20 (sigma per root flow, 95% bounds),
+    the share retained at t+20 when the peak is at least 2 standard errors from zero, and placebo status."""
+    stacked = estimators.stacked_legs(cell, GROUPS, legs=PATH_LEGS)
+    placebo = estimators.placebo_loadings(cell, GROUPS)
+    out = {}
+    for g in GROUPS:
+        path = _path(stacked, g)
+        values, se = path["values"], path["se"]
+        peak, peak_se = values[4], se[4]
+        levels = {
+            label: {"value": values[i], "lo": values[i] - 1.96 * se[i], "hi": values[i] + 1.96 * se[i]}
+            for label, i in (("peak (t+1 open)", 4), ("t+5", 5), ("t+20", 6))
+        }
+        out[g] = {
+            "levels": levels,
+            "retained_t20": values[6] / peak if abs(peak / peak_se) >= 2 else None,
+            "placebo_clean": all(placebo[leg][g][1] > 0.05 for leg in placebo),
+        }
+    return out
+
+
+def run_v3(out: Path, repo: Path = REPO) -> dict:
+    """SPEC v3: H1 tick size, H2 delivery split, H3 retention levels, on the v1 buy cell and the C2 sell cell."""
+    require_spec(repo, SPEC_V3_TAG)
+    table = pl.read_parquet(out / "event_table.parquet")
+    cells = {
+        label: estimators.common_support(estimators.primary_cell(table, side=side))
+        for side, label in ((1, "buys"), (-1, "sells"))
+    }
+    return {
+        "h1_tick": {label: tick_test(cell) for label, cell in cells.items()},
+        "h2_delivery": {label: delivery_test(table, cell) for label, cell in cells.items()},
+        "h3_retention": {label: retention_levels(cell) for label, cell in cells.items()},
+    }
+
+
+def table3(results: dict) -> pl.DataFrame:
+    """SPEC v3 rows for H1 and H2: statistic, side, estimate, z, p."""
+    rows = []
+    for side, variants in results["h1_tick"].items():
+        for label, v in variants.items():
+            rows.append({"hypothesis": "H1", "side": side, "statistic": f"I minus R, {label}", "n": v["n"],
+                         "estimate": v["theta_I"] - v["theta_R"], "z": v["z"], "p": v["p"]})
+    for side, tests in results["h2_delivery"].items():
+        for label, v in tests.items():
+            if label != "counts":
+                rows.append({"hypothesis": "H2", "side": side, "statistic": label, "n": sum(tests["counts"].values()),
+                             "estimate": v["estimate"], "z": v["z"], "p": v["p_one_sided"] if label.startswith("interaction") else v["p"]})
+    return pl.DataFrame(rows)
+
+
+def write_outputs_v3(results: dict, dest: Path) -> None:
+    dest.mkdir(parents=True, exist_ok=True)
+    (dest / "results_v3.json").write_text(json.dumps(results, indent=2, default=str), encoding="utf-8")
+    table3(results).write_csv(dest / "table3.csv")
