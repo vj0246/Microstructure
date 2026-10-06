@@ -11,6 +11,7 @@ The design was argued out by four adversarial reviewers and settled by a judge (
 
 - **Buys:** tag `spec-v1`, [docs/SPEC.md](docs/SPEC.md). Underpowered, so reported as descriptive.
 - **Sells:** tag `spec-v2`, [docs/SPEC_v2.md](docs/SPEC_v2.md). Powered: I 1,031, R 1,067.
+- **Mechanism checks:** tag `spec-v3`, [docs/SPEC_v3.md](docs/SPEC_v3.md). Exploratory: tick size, delivery split, retention levels.
 
 **Headline.** A disclosed institutional buy is followed by an overnight premium of about 3× the reference level per unit of √size (descriptive). On disclosed sells, the powered test finds no difference between institutions and reference sellers, and no overnight response at all.
 
@@ -246,6 +247,47 @@ In C2, outcomes and band flags are signed by side, so a positive θ means the pr
 
 **Overall.** The one powered, pre-registered test finds **no identity premium on disclosed sells**. The buy side shows an institutional premium (θ_I ≈ 3 × θ_R) that is descriptive only. The pattern matches the long-standing buy/sell asymmetry in block-trade studies: purchases carry information, while sales are more often liquidity-driven. That comparison is drawn across the two sides, not from a joint confirmatory test.
 
+## Mechanism checks (SPEC v3, exploratory)
+
+Three tests probe *why* the buy-side premium might exist. They reuse cells whose outcomes were already seen, so they are exploratory and confirm nothing. The reading rules were frozen under tag `spec-v3` ([docs/SPEC_v3.md](docs/SPEC_v3.md)) before any price-split or delivery-split return was computed.
+
+**H1: is it a tick-size artifact?** Reference buyers trade cheaper stocks (median prior price Rs 98, against Rs 349 for institutions), and the Rs 0.05 tick is 25 bp at Rs 20, which is larger than the 15 bp premium. Rule fixed in advance: the premium is "tick-driven" if the contrast falls below half its full-sample value (0.039σ) once the price is at least Rs 50.
+
+| Buys: θ_I − θ_R | n | Contrast | z |
+|---|---|---|---|
+| Full cell | 1,542 | 0.039 | 2.86 |
+| **Price ≥ Rs 50 (primary)** | 1,271 | **0.041** | 2.66 |
+| Price ≥ Rs 100 | 1,024 | 0.043 | 2.29 |
+| Full cell, ln price as a control | 1,542 | 0.043 | 3.16 |
+
+**Reading: not explained by tick size or price mix.** The gap does not shrink when the cheap stocks are removed; it gets slightly larger. The sell-side null is unchanged by the same restrictions (z between −1.2 and −1.8).
+
+**H2: does the premium concentrate in high-delivery events?** Institutions take delivery and speculators do not, so an information premium should be larger on high-delivery stock-days. Prediction: (gap on high-delivery days) minus (gap on low-delivery days) > 0.
+
+| Buys | Contrast (I − R) | z |
+|---|---|---|
+| High delivery | 0.036 | 2.47 |
+| Low delivery | 0.041 | 1.69 |
+| **Interaction (high − low)** | **−0.005** | **−0.19** (one-sided p = 0.57) |
+
+**Reading: the prediction is not supported.** The premium is as large on low-delivery days. The test is also weak: the interaction's standard error is about 0.026, so it could not have detected a difference much smaller than the premium itself. Delivery here is the whole stock-day's share, not the client's own trade, which blurs the split. The honest conclusion is "no evidence either way", not "ruled out".
+
+**H3: retention as levels** (cumulative response in σ per √flow, 95% interval; the sign is that of the side):
+
+| Group | Peak (t+1 open) | t+5 | t+20 | Placebo-clean |
+|---|---|---|---|---|
+| Buys, institutional | −0.138 [−0.208, −0.068] | −0.097 [−0.199, +0.006] | −0.049 [−0.222, +0.124] | no |
+| Buys, reference | +0.039 [−0.057, +0.135] | −0.036 | −0.041 | yes |
+| Sells, institutional | +0.045 [−0.007, +0.097] | +0.002 | −0.028 | yes |
+| Sells, reference | +0.082 [+0.027, +0.137] | +0.051 | −0.000 [−0.119, +0.119] | no |
+
+**Reading: mostly uninformative.**
+- The only group with a clearly non-zero cumulative response is institutional buys, and its path is negative, because they buy into weakness (day-0 drop) before the overnight rebound. It fails its own placebo, so its 36% "retained at t+20" is selection-contaminated and should not be read as impact decay.
+- Reference sells show a significant overnight move that is fully gone by t+20, but they also fail the placebo (they sell after run-ups).
+- Neither placebo-clean group has a response distinguishable from zero.
+
+**What the three checks add.** One result is real: the buy-side premium is not an artifact of tick size or of the stocks different groups trade. The other two are honest nulls: delivery cannot separate information from non-information, and the retention paths are too noisy (or too contaminated) to say how much of the response is permanent.
+
 ## D4: why no free impact exponent
 
 This is a simulated panel of 1,500 stocks with a true law r = Y·σ·(|net|/ADV)^0.5 plus t-noise, run over 10 seeds per scenario. Profile bias is for the censored-t fit; the binned fit is the slope of log mean response on log x.
@@ -282,9 +324,9 @@ src/impact/
   clean/          symbols.py, adjustment.py, panel.py
   flows/          disclosures.py, trader_types.py, client_types.csv
   analysis/       estimators.py, truncation_sim.py, report.py
-docs/             PLAN.md (design and rulings), SPEC.md (buys, v1), SPEC_v2.md (sells, v2), figures
+docs/             PLAN.md (design and rulings), SPEC.md (buys, v1), SPEC_v2.md (sells, v2), SPEC_v3.md (mechanism checks), figures
 scripts/          run_pipeline.cmd (resumable pull, build, simulation)
-tests/            one file per module (103 tests)
+tests/            one file per module (108 tests)
 ```
 
-Python 3.12, uv, polars, httpx, numpy, scipy, matplotlib. Data lives outside the repo in `IMPACT_DATA_DIR`. Entry points: `uv run impact build`, `uv run impact check m0..m4`, `uv run impact simulate`, `uv run impact report [--spec v1|v2]`. Each version refuses to run without its own tag.
+Python 3.12, uv, polars, httpx, numpy, scipy, matplotlib. Data lives outside the repo in `IMPACT_DATA_DIR`. Entry points: `uv run impact build`, `uv run impact check m0..m4`, `uv run impact simulate`, `uv run impact report [--spec v1|v2|v3]`. Each version refuses to run without its own tag.
